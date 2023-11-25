@@ -18,6 +18,7 @@ void timer_sleep (int64_t ticks);
 void timer_msleep (int64_t milliseconds);
 void timer_usleep (int64_t microseconds);
 void timer_nsleep (int64_t nanoseconds);
+void thread_tick_sleep (struct thread* t, void* aux UNUSED);
 
 /* Busy waits. */
 void timer_mdelay (int64_t milliseconds);

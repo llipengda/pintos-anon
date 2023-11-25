@@ -92,8 +92,11 @@ timer_sleep (int64_t ticks)
   int64_t start = timer_ticks ();
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+
+  enum intr_level old_level = intr_disable (); // 关闭中断
+  thread_current ()->sleep_ticks = ticks; // 设置 sleep_ticks
+  thread_block (); // 阻塞当前进程
+  intr_set_level (old_level); // 恢复中断
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -172,6 +175,21 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
+  thread_foreach (thread_tick_sleep, NULL); // 每次中断都调用 thread_tick_sleep
+}
+
+/* 休眠时间到了就唤醒 */
+void
+thread_tick_sleep (struct thread *t, void *aux UNUSED)
+{
+  if (t->status = THREAD_BLOCKED && t->sleep_ticks > 0) // 如果休眠时间大于 0
+  {
+    t->sleep_ticks--; // 休眠时间减一
+    if (t->sleep_ticks == 0) // 如果休眠时间到了
+    {
+      thread_unblock (t); // 唤醒
+    }
+  }
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
