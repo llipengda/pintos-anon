@@ -89,8 +89,6 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
-
   ASSERT (intr_get_level () == INTR_ON);
 
   enum intr_level old_level = intr_disable (); // 关闭中断
@@ -179,10 +177,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
 }
 
 /* 休眠时间到了就唤醒 */
-void
-thread_tick_sleep (struct thread *t, void *aux UNUSED)
+void thread_tick_sleep (struct thread *t, void *aux UNUSED)
 {
-  if (t->status = THREAD_BLOCKED && t->sleep_ticks > 0) // 如果休眠时间大于 0
+  if (t->status == THREAD_BLOCKED && t->sleep_ticks > 0) // 如果休眠时间大于 0
   {
     t->sleep_ticks--; // 休眠时间减一
     if (t->sleep_ticks == 0) // 如果休眠时间到了
