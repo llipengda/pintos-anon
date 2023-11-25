@@ -89,6 +89,9 @@ timer_elapsed (int64_t then)
 void
 timer_sleep (int64_t ticks) 
 {
+  if (ticks <= 0) // 如果休眠时间小于等于 0
+    return; // 直接返回
+    
   ASSERT (intr_get_level () == INTR_ON);
 
   enum intr_level old_level = intr_disable (); // 关闭中断
