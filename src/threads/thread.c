@@ -341,8 +341,12 @@ void
 thread_set_priority (int new_priority) 
 {
   enum intr_level old_level = intr_disable ();
-  thread_current ()->priority = new_priority;
-  thread_yield (); // 重新调度
+  thread_current ()->original_priority = new_priority;
+  if (list_empty (&thread_current ()->locks) || new_priority > thread_current ()->priority)
+  {
+    thread_current ()->priority = new_priority;
+    thread_yield ();
+  }
   intr_set_level (old_level);
 }
 
