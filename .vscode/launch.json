@@ -1,7 +1,7 @@
 {
     "configurations": [
     {
-        "name": "nmsl",
+        "name": "gdb调试pintos",
         "type": "cppdbg",
         "request": "launch",
         "program": "${workspaceFolder}/src/threads/build/kernel.o",
