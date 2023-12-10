@@ -96,6 +96,9 @@ struct thread
     /* 应该休眠的时间 */
     int64_t sleep_ticks;
 
+    /* 原本的优先级 */
+    int original_priority;                /* Orignal Priority*/
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
