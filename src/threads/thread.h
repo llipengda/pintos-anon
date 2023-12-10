@@ -102,6 +102,9 @@ struct thread
     /* 持有的锁 */
     struct list locks;                  /* List of locks that the thread is holding. */
 
+    /* 等待的锁 */
+    struct lock *waiting;               /* The lock that the thread is waiting for. */
+
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */

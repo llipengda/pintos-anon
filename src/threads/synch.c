@@ -197,17 +197,26 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  if (lock->holder != NULL && lock->holder->priority < thread_current ()->priority)
-  {
-    lock->holder->priority = thread_current ()->priority;
-    if (lock->max_priority < thread_current ()->priority)
-      lock->max_priority = thread_current ()->priority;
-  }
+  thread_current ()->waiting = lock;
+  priority_donate (thread_current (), lock);
 
   sema_down (&lock->semaphore);
 
   list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_cmp, NULL);
+  thread_current ()->waiting = NULL;
   lock->holder = thread_current ();
+}
+
+void
+priority_donate (struct thread *t, struct lock *l)
+{
+  if (l != NULL && l->holder != NULL && l->holder->priority < t->priority)
+  {
+    l->holder->priority = t->priority;
+    if (l->max_priority < t->priority)
+      l->max_priority = t->priority;
+    priority_donate (l->holder, l->holder->waiting);
+  }
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
