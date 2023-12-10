@@ -114,9 +114,13 @@ sema_up (struct semaphore *sema)
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
+  {
+    list_sort (&sema->waiters, thread_priority_cmp, NULL);
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
+  }
   sema->value++;
+  thread_yield ();
   intr_set_level (old_level);
 }
 
@@ -197,25 +201,29 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  thread_current ()->waiting = lock;
-  priority_donate (thread_current (), lock);
+  if (lock->holder != NULL && !thread_mlfqs)
+  {
+    thread_current ()->waiting = lock;
+    priority_donate (thread_current (), lock);
+  }
 
   sema_down (&lock->semaphore);
 
   list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_cmp, NULL);
   thread_current ()->waiting = NULL;
+  lock->max_priority = thread_current ()->priority;
   lock->holder = thread_current ();
 }
 
 void
 priority_donate (struct thread *t, struct lock *l)
 {
-  if (l != NULL && l->holder != NULL && l->holder->priority < t->priority)
+  if (l != NULL && t->priority > l->max_priority)
   {
     l->holder->priority = t->priority;
     if (l->max_priority < t->priority)
       l->max_priority = t->priority;
-    priority_donate (l->holder, l->holder->waiting);
+    priority_donate (t, l->holder->waiting);
   }
 }
 
@@ -252,18 +260,20 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  lock->holder = NULL;
-  sema_up (&lock->semaphore);
-
   list_remove (&lock->elem);
   max_priority = thread_current ()->original_priority;
   if (!list_empty (&thread_current ()->locks))
   {
+    list_sort (&thread_current ()->locks, lock_priority_cmp, NULL);
     struct lock *l = list_entry (list_front (&thread_current ()->locks), struct lock, elem);
-    max_priority = l->max_priority;
+    if (l->max_priority > max_priority)
+      max_priority = l->max_priority;
   }
 
-  thread_set_priority (max_priority);
+  thread_current ()->priority = max_priority;
+
+  lock->holder = NULL;
+  sema_up (&lock->semaphore);
 }
 
 /* Returns true if the current thread holds LOCK, false
