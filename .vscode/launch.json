@@ -1,0 +1,20 @@
+{
+    "configurations": [
+    {
+        "name": "nmsl",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/src/threads/build/kernel.o",
+        "MIMode": "gdb",
+        "miDebuggerServerAddress": "localhost:1234",
+        "cwd": "${workspaceRoot}",
+        "setupCommands": [
+            {
+                "description": "set architecture i386:x86-64",
+                "text": "set architecture i386:x86-64",
+                "ignoreFailures": true
+            }
+        ],
+    }
+    ]
+}
