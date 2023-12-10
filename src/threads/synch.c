@@ -178,6 +178,7 @@ lock_init (struct lock *lock)
   ASSERT (lock != NULL);
 
   lock->holder = NULL;
+  lock->max_priority = PRI_MIN;
   sema_init (&lock->semaphore, 1);
 }
 
@@ -199,9 +200,13 @@ lock_acquire (struct lock *lock)
   if (lock->holder != NULL && lock->holder->priority < thread_current ()->priority)
   {
     lock->holder->priority = thread_current ()->priority;
+    if (lock->max_priority < thread_current ()->priority)
+      lock->max_priority = thread_current ()->priority;
   }
 
   sema_down (&lock->semaphore);
+
+  list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_cmp, NULL);
   lock->holder = thread_current ();
 }
 
@@ -233,13 +238,23 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock) 
 {
+  int max_priority;
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 
-  thread_set_priority (thread_current ()->original_priority);
+  list_remove (&lock->elem);
+  max_priority = thread_current ()->original_priority;
+  if (!list_empty (&thread_current ()->locks))
+  {
+    struct lock *l = list_entry (list_front (&thread_current ()->locks), struct lock, elem);
+    max_priority = l->max_priority;
+  }
+
+  thread_set_priority (max_priority);
 }
 
 /* Returns true if the current thread holds LOCK, false
@@ -342,4 +357,13 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+bool
+lock_priority_cmp (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct lock *lock_a = list_entry (a, struct lock, elem);
+  struct lock *lock_b = list_entry (b, struct lock, elem);
+
+  return lock_a->max_priority > lock_b->max_priority;
 }

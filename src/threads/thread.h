@@ -97,7 +97,10 @@ struct thread
     int64_t sleep_ticks;
 
     /* 原本的优先级 */
-    int original_priority;                /* Orignal Priority*/
+    int original_priority;              /* Orignal Priority*/
+
+    /* 持有的锁 */
+    struct list locks;                  /* List of locks that the thread is holding. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
