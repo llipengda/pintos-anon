@@ -209,9 +209,12 @@ lock_acquire (struct lock *lock)
 
   sema_down (&lock->semaphore);
 
-  list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_cmp, NULL);
-  thread_current ()->waiting = NULL;
-  lock->max_priority = thread_current ()->priority;
+  if (!thread_mlfqs)
+  {
+    list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_priority_cmp, NULL);
+    thread_current ()->waiting = NULL;
+    lock->max_priority = thread_current ()->priority;
+  }
   lock->holder = thread_current ();
 }
 
@@ -260,17 +263,19 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  list_remove (&lock->elem);
-  max_priority = thread_current ()->original_priority;
-  if (!list_empty (&thread_current ()->locks))
-  {
-    list_sort (&thread_current ()->locks, lock_priority_cmp, NULL);
-    struct lock *l = list_entry (list_front (&thread_current ()->locks), struct lock, elem);
-    if (l->max_priority > max_priority)
-      max_priority = l->max_priority;
-  }
+  if (!thread_mlfqs) {
+    list_remove (&lock->elem);
+    max_priority = thread_current ()->original_priority;
+    if (!list_empty (&thread_current ()->locks))
+    {
+      list_sort (&thread_current ()->locks, lock_priority_cmp, NULL);
+      struct lock *l = list_entry (list_front (&thread_current ()->locks), struct lock, elem);
+      if (l->max_priority > max_priority)
+        max_priority = l->max_priority;
+    }
 
-  thread_current ()->priority = max_priority;
+    thread_current ()->priority = max_priority;
+  }
 
   lock->holder = NULL;
   sema_up (&lock->semaphore);

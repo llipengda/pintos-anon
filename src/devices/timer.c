@@ -175,6 +175,14 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  if (thread_mlfqs)
+  {
+    increase_recent_cpu();
+    if (ticks % TIMER_FREQ == 0)
+      update_load_avg ();
+    else if (ticks % 4 == 0)
+      mlfqs_update_priority (thread_current ());
+  }
   thread_tick ();
   thread_foreach (thread_tick_sleep, NULL); // 每次中断都调用 thread_tick_sleep
 }
