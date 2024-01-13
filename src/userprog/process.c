@@ -23,6 +23,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void push_args(void **esp, int argc, char **argv);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -127,7 +128,7 @@ start_process (void *file_name_)
   NOT_REACHED ();
 }
 
-void
+static void
 push_args(void **esp, int argc, char* argv[])
 {
   int i;
@@ -159,7 +160,30 @@ push_args(void **esp, int argc, char* argv[])
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  struct list *l = &thread_current ()->children;
+  struct list_elem *child_elem_ptr;
+  child_elem_ptr = list_begin (l);
+  struct child *child_ptr = NULL;
+  while (child_elem_ptr != list_end (l))
+  {
+    child_ptr = list_entry (child_elem_ptr, struct child, elem);
+    if (child_ptr->tid == child_tid)
+    {
+      if (!child_ptr->running)
+      {
+        child_ptr->running = true;
+        sema_down (&child_ptr->sema);
+        break;
+      } 
+      else 
+        return -1;
+    }
+    child_elem_ptr = list_next (child_elem_ptr);
+  }
+  if (child_elem_ptr == list_end (l))
+    return -1;
+  list_remove (child_elem_ptr);
+  return child_ptr->exit_status;
 }
 
 /* Free the current process's resources. */
@@ -293,12 +317,18 @@ load (const char *file_name, void (**eip) (void), void **esp)
   process_activate ();
 
   /* Open executable file. */
+  acquire_f ();
   file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
       goto done; 
     }
+
+  struct thread_file *thread_file_temp = malloc(sizeof(struct thread_file));
+  thread_file_temp->file = file;
+  list_push_back (&thread_current()->files, &thread_file_temp->elem);
+  file_deny_write (file);
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -383,7 +413,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  release_f ();
   return success;
 }
 

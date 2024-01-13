@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "stdint.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -13,6 +14,8 @@
 #include "threads/vaddr.h"
 #ifdef USERPROG
 #include "userprog/process.h"
+#include "filesys/file.h"
+#include "threads/malloc.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -59,6 +62,22 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+#ifdef USERPROG
+static struct lock lock_f;
+
+void
+acquire_f (void)
+{
+  lock_acquire (&lock_f);
+}
+
+void
+release_f (void)
+{
+  lock_release (&lock_f);
+}
+#endif
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -92,6 +111,10 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+
+#ifdef USERPROG
+  lock_init (&lock_f);
+#endif
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -182,6 +205,15 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+#ifdef USERPROG
+  struct child *c = malloc (sizeof (struct child));
+  c->tid = tid;
+  sema_init (&c->sema, 0);
+  list_push_back (&thread_current ()->children, &c->elem);
+  c->exit_status = UINT32_MAX;
+  c->running = false;
+  t->child_thread = c;
+#endif
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -290,6 +322,27 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
+
+#ifdef USERPROG
+  printf ("%s: exit(%d)\n", thread_current ()->name, thread_current ()->exit_status);
+
+  thread_current ()->child_thread->exit_status = thread_current ()->exit_status;
+  sema_up (&thread_current ()->child_thread->sema);
+
+  struct list_elem *e;
+  struct list *files = &thread_current()->files;
+  while(!list_empty (files))
+  {
+    e = list_pop_front (files);
+    struct thread_file *f = list_entry (e, struct thread_file, elem);
+    acquire_f ();
+    file_close (f->file);
+    release_f ();
+    list_remove (e);
+    free (f);
+  }
+#endif
+
   list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
@@ -469,8 +522,12 @@ init_thread (struct thread *t, const char *name, int priority)
     t->parent = NULL;
   else
     t->parent = thread_current ();
+  list_init (&t->children);
+  list_init (&t->files);
   sema_init (&t->sema, 0);
   t->success = true;
+  t->exit_status = UINT32_MAX;
+  t->max_fd = 2;
 #endif
 
   old_level = intr_disable ();
