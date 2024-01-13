@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "stdint.h"
+#include "threads/synch.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -17,6 +19,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -29,6 +32,9 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char *fn_copy2;
+  char *save_ptr;
+  char *token;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
@@ -36,12 +42,29 @@ process_execute (const char *file_name)
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  fn_copy2 = palloc_get_page (0);
+  if (fn_copy2 == NULL)
+  {
+    palloc_free_page(fn_copy);
+    return TID_ERROR;
+  }
+
   strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn_copy2, file_name, PGSIZE);
+
+  token = strtok_r (fn_copy, " ", &save_ptr);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (token, PRI_DEFAULT, start_process, fn_copy2);
+  palloc_free_page(fn_copy);
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  {
+    palloc_free_page (fn_copy2); 
+    return tid;
+  }
+  sema_down(&thread_current ()->sema);
+  if (!thread_current ()->success)
+    return TID_ERROR;
   return tid;
 }
 
@@ -51,20 +74,48 @@ static void
 start_process (void *file_name_)
 {
   char *file_name = file_name_;
+  char *fn_copy;
+  char *save_ptr;
+  char *token;
   struct intr_frame if_;
   bool success;
+  int argc = 0;
+  char *argv[50];
+
+  fn_copy = malloc (strlen (file_name) + 1);
+  strlcpy (fn_copy, file_name, strlen (file_name) + 1);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
+
+  file_name = strtok_r (file_name, " ", &save_ptr);
   success = load (file_name, &if_.eip, &if_.esp);
+
+  if (success)
+  {
+    for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL; token = strtok_r (NULL, " ", &save_ptr))
+    {
+      if_.esp -= (strlen(token) + 1);
+      memcpy (if_.esp, token, strlen(token) + 1);
+      argv[argc++] = (char *)if_.esp;
+    }
+    push_args (&if_.esp, argc, argv);
+    thread_current ()->parent->success = true;
+    sema_up(&thread_current ()->parent->sema);
+  }
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  free (fn_copy);
+  if (!success)
+  {
+    thread_current()->parent->success = false;
+    sema_up(&thread_current ()->parent->sema);
     thread_exit ();
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -74,6 +125,26 @@ start_process (void *file_name_)
      and jump to it. */
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
+}
+
+void
+push_args(void **esp, int argc, char* argv[])
+{
+  int i;
+  *esp = (void *)((int)*esp & 0xfffffffc);
+  *esp -= 4;
+  *(uint32_t *) *esp = 0;
+  for (i = argc - 1; i >= 0; i--)
+  {
+    *esp -= 4;
+    *(uint32_t *) *esp = (uint32_t)argv[i];
+  }
+  *esp -= 4;
+  *(uint32_t *) *esp = (uint32_t)*esp + 4;
+  *esp -= 4;
+  *(uint32_t *) *esp = argc;
+  *esp -= 4;
+  *(uint32_t *) *esp = 0;
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
