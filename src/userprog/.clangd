@@ -1,0 +1,4 @@
+CompileFlags:
+    Add: [-std=gnu99, -I.., -I../lib, -I../lib/user, -DUSERPROG]
+    Remove: [-xobjective-c++-header]
+    Compiler: /usr/bin/gcc
